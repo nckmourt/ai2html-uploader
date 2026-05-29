@@ -2,6 +2,8 @@ const state = {
   files: [],
   folderSlug: "",
   htmlPaths: [],
+  previewArtboards: [],
+  selectedArtboardIndex: 0,
   mainHtmlPath: "",
   previewHtmlPath: "",
   previewUrls: new Map(),
@@ -20,6 +22,10 @@ const elements = {
   copyButton: document.querySelector("#copy-button"),
   embedCode: document.querySelector("#embed-code"),
   previewTabs: document.querySelector("#preview-tabs"),
+  artboardControls: document.querySelector("#artboard-controls"),
+  prevArtboard: document.querySelector("#prev-artboard"),
+  nextArtboard: document.querySelector("#next-artboard"),
+  artboardLabel: document.querySelector("#artboard-label"),
   previewFrame: document.querySelector("#preview-frame"),
   previewEmpty: document.querySelector("#preview-empty"),
   progressLog: document.querySelector("#progress-log"),
@@ -103,6 +109,8 @@ elements.resetButton.addEventListener("click", () => {
   state.files = [];
   state.folderSlug = "";
   state.htmlPaths = [];
+  state.previewArtboards = [];
+  state.selectedArtboardIndex = 0;
   state.mainHtmlPath = "";
   state.previewHtmlPath = "";
   state.embedCode = "";
@@ -126,6 +134,14 @@ elements.copyButton.addEventListener("click", async () => {
     document.execCommand("copy");
     appendLog("Embed code copied.", "success");
   }
+});
+
+elements.prevArtboard.addEventListener("click", () => {
+  cycleArtboard(-1);
+});
+
+elements.nextArtboard.addEventListener("click", () => {
+  cycleArtboard(1);
 });
 
 async function loadFileList(fileList) {
@@ -413,12 +429,15 @@ async function updatePreview(htmlPath) {
     const previewUrls = await createPreviewUrls();
     const htmlFile = state.files.find((item) => item.path === htmlPath);
     const html = await htmlFile.file.text();
+    state.previewArtboards = detectPreviewArtboards(html);
+    state.selectedArtboardIndex = getDefaultArtboardIndex(state.previewArtboards);
     const previewHtml = rewriteHtmlForPreview(html, htmlPath, previewUrls);
     state.previewDocumentUrl = URL.createObjectURL(new Blob([previewHtml], { type: "text/html" }));
     elements.previewFrame.src = state.previewDocumentUrl;
     elements.previewFrame.classList.add("visible");
     elements.previewEmpty.classList.add("hidden");
     renderPreviewTabs();
+    renderArtboardControls();
     if (state.missingPreviewAssets.size) {
       appendLog(`Preview warning: ${state.missingPreviewAssets.size} referenced asset(s) were not found in the dropped folder. First missing path: ${[...state.missingPreviewAssets][0]}`, "error");
     }
@@ -450,6 +469,77 @@ async function createPreviewUrls() {
   return previewUrls;
 }
 
+function detectPreviewArtboards(html) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, "text/html");
+  const artboards = [...doc.querySelectorAll(".g-artboard")].map((node, index) => {
+    const id = node.getAttribute("id") || `Artboard ${index + 1}`;
+    const width = getArtboardWidth(node);
+    const name = cleanArtboardName(id);
+    return {
+      id,
+      label: width ? `${name} (${width}px)` : name,
+      width,
+    };
+  });
+
+  return artboards.length ? artboards : [{ id: "preview", label: "Full preview", width: 0 }];
+}
+
+function getArtboardWidth(node) {
+  const candidates = [
+    node.style.width,
+    node.style.maxWidth,
+    node.getAttribute("data-min-width"),
+    node.getAttribute("data-width"),
+    node.getAttribute("data-max-width"),
+  ];
+  const width = candidates
+    .map((value) => Number(String(value || "").replace(/[^\d.]/g, "")))
+    .find((value) => Number.isFinite(value) && value > 0);
+  return width ? Math.round(width) : 0;
+}
+
+function cleanArtboardName(id) {
+  return id
+    .replace(/^g-/, "")
+    .replace(/^[^-]+-/, "")
+    .replace(/[_-]+/g, " ")
+    .trim()
+    || "Artboard";
+}
+
+function getDefaultArtboardIndex(artboards) {
+  if (!artboards.length) return 0;
+  return artboards.reduce((bestIndex, artboard, index) => {
+    const bestWidth = artboards[bestIndex].width || 0;
+    return artboard.width > bestWidth ? index : bestIndex;
+  }, 0);
+}
+
+function cycleArtboard(direction) {
+  if (!state.previewArtboards.length) return;
+  const total = state.previewArtboards.length;
+  state.selectedArtboardIndex = (state.selectedArtboardIndex + direction + total) % total;
+  renderArtboardControls();
+}
+
+function renderArtboardControls() {
+  const artboard = state.previewArtboards[state.selectedArtboardIndex];
+  const hasMultiple = state.previewArtboards.length > 1;
+
+  elements.artboardControls.hidden = !state.previewArtboards.length;
+  elements.prevArtboard.disabled = !hasMultiple;
+  elements.nextArtboard.disabled = !hasMultiple;
+  elements.artboardLabel.textContent = artboard ? artboard.label : "Preview";
+
+  if (artboard?.width) {
+    elements.previewFrame.style.width = `${artboard.width}px`;
+  } else {
+    elements.previewFrame.style.width = "100%";
+  }
+}
+
 function revokePreviewUrls() {
   if (state.previewDocumentUrl) {
     URL.revokeObjectURL(state.previewDocumentUrl);
@@ -476,9 +566,11 @@ function renderPreviewTabs() {
 
 function clearPreview() {
   elements.previewFrame.removeAttribute("src");
+  elements.previewFrame.style.width = "";
   elements.previewFrame.classList.remove("visible");
   elements.previewEmpty.classList.remove("hidden");
   elements.previewTabs.innerHTML = "";
+  elements.artboardControls.hidden = true;
 }
 
 async function putGitHubFile(config, item) {
