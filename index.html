@@ -56,7 +56,14 @@
             <p class="eyebrow">Preview</p>
             <h2>Local graphic preview</h2>
           </div>
-          <div class="preview-tabs" id="preview-tabs"></div>
+          <div class="preview-actions">
+            <div class="artboard-controls" id="artboard-controls" hidden>
+              <button type="button" class="secondary icon-button" id="prev-artboard" aria-label="Previous artboard">&lt;</button>
+              <span id="artboard-label">Artboard</span>
+              <button type="button" class="secondary icon-button" id="next-artboard" aria-label="Next artboard">&gt;</button>
+            </div>
+            <div class="preview-tabs" id="preview-tabs"></div>
+          </div>
         </div>
         <div class="preview-frame-wrap">
           <iframe id="preview-frame" title="Local ai2html preview" sandbox="allow-scripts allow-same-origin"></iframe>
@@ -79,6 +86,6 @@
       </section>
     </main>
 
-    <script src="app.js?v=20260529-1" type="module"></script>
+    <script src="app.js?v=20260529-2" type="module"></script>
   </body>
 </html>
