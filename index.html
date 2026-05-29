@@ -1,1 +1,84 @@
-<html><body>ai2html graphics</body></html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ai2html GitHub Pages Uploader</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="workspace">
+        <div class="panel upload-panel">
+          <div class="title-row">
+            <div>
+              <p class="eyebrow">Local uploader</p>
+              <h1>ai2html to GitHub Pages</h1>
+            </div>
+            <span class="status-pill" id="privacy-status">Token stays in this tab</span>
+          </div>
+
+          <label class="drop-zone" id="drop-zone" for="folder-input">
+            <input id="folder-input" type="file" webkitdirectory directory multiple>
+            <span class="drop-icon" aria-hidden="true">+</span>
+            <span class="drop-title">Drop an ai2html output folder</span>
+            <span class="drop-copy">or choose a folder from your computer</span>
+          </label>
+
+          <div class="file-summary" id="file-summary" aria-live="polite">
+            No folder selected yet.
+          </div>
+        </div>
+
+        <form class="panel controls-panel" id="upload-form" autocomplete="off">
+          <div class="destination-summary">
+            <p class="eyebrow">Destination</p>
+            <h2>nckmourt/ai2html-uploader</h2>
+            <p>Uploads use the dropped folder name as the public folder slug.</p>
+          </div>
+          <div class="field-grid">
+            <label class="wide">
+              <span>Fine-grained personal access token</span>
+              <input id="token" name="token" type="password" autocomplete="off" required placeholder="github_pat_...">
+            </label>
+          </div>
+
+          <div class="button-row">
+            <button type="submit" id="upload-button">Upload to GitHub</button>
+            <button type="button" class="secondary" id="reset-button">Reset</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel preview-panel" aria-live="polite">
+        <div class="output-header">
+          <div>
+            <p class="eyebrow">Preview</p>
+            <h2>Local graphic preview</h2>
+          </div>
+          <div class="preview-tabs" id="preview-tabs"></div>
+        </div>
+        <div class="preview-frame-wrap">
+          <iframe id="preview-frame" title="Local ai2html preview" sandbox="allow-scripts allow-same-origin"></iframe>
+          <div class="preview-empty" id="preview-empty">Drop a folder to preview the detected graphic before uploading.</div>
+        </div>
+      </section>
+
+      <section class="panel output-panel" aria-live="polite">
+        <div class="output-header">
+          <div>
+            <p class="eyebrow">Result</p>
+            <h2>Embed code</h2>
+          </div>
+          <button type="button" class="secondary" id="copy-button" disabled>Copy embed code</button>
+        </div>
+        <textarea id="embed-code" readonly placeholder="Your iframe embed code will appear here after upload."></textarea>
+        <div class="progress-log" id="progress-log">
+          <p>Ready.</p>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js" type="module"></script>
+  </body>
+</html>
