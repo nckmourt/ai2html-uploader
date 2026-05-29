@@ -415,7 +415,6 @@ async function updatePreview(htmlPath) {
     const html = await htmlFile.file.text();
     const previewHtml = rewriteHtmlForPreview(html, htmlPath, previewUrls);
     state.previewDocumentUrl = URL.createObjectURL(new Blob([previewHtml], { type: "text/html" }));
-    elements.previewFrame.onload = reportPreviewImageState;
     elements.previewFrame.src = state.previewDocumentUrl;
     elements.previewFrame.classList.add("visible");
     elements.previewEmpty.classList.add("hidden");
@@ -449,20 +448,6 @@ async function createPreviewUrls() {
 
   state.previewUrls = previewUrls;
   return previewUrls;
-}
-
-function reportPreviewImageState() {
-  try {
-    const doc = elements.previewFrame.contentDocument;
-    const images = [...doc.images];
-    const broken = images.filter((image) => !image.complete || image.naturalWidth === 0);
-    if (images.length && broken.length) {
-      const source = broken[0].getAttribute("src") || "unknown image";
-      appendLog(`Preview warning: ${broken.length} image(s) did not load. First broken source: ${source.slice(0, 140)}`, "error");
-    }
-  } catch {
-    appendLog("Preview warning: could not inspect image loading inside the preview frame.", "error");
-  }
 }
 
 function revokePreviewUrls() {
