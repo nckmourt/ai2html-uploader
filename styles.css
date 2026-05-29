@@ -266,11 +266,45 @@ button.secondary:hover:not(:disabled) {
   margin-top: 20px;
 }
 
+.preview-actions {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+}
+
 .preview-tabs {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
+}
+
+.artboard-controls {
+  display: grid;
+  grid-template-columns: 34px minmax(120px, auto) 34px;
+  gap: 8px;
+  align-items: center;
+}
+
+.artboard-controls[hidden] {
+  display: none;
+}
+
+#artboard-label {
+  min-width: 0;
+  max-width: 280px;
+  overflow: hidden;
+  color: var(--muted);
+  font-weight: 800;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.icon-button {
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0;
 }
 
 .preview-tab {
@@ -293,9 +327,11 @@ button.secondary:hover:not(:disabled) {
 
 .preview-frame-wrap {
   position: relative;
+  display: flex;
+  justify-content: center;
   min-height: 420px;
   margin-top: 16px;
-  overflow: hidden;
+  overflow: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfdfb;
@@ -303,7 +339,7 @@ button.secondary:hover:not(:disabled) {
 
 #preview-frame {
   display: none;
-  width: 100%;
+  max-width: 100%;
   height: 620px;
   border: 0;
   background: white;
@@ -366,6 +402,10 @@ button.secondary:hover:not(:disabled) {
   .output-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .preview-actions {
+    justify-items: start;
   }
 
   .upload-panel,
