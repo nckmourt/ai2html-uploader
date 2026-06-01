@@ -10,6 +10,8 @@ const state = {
   previewDocumentUrl: "",
   missingPreviewAssets: new Set(),
   embedCode: "",
+  embedHeight: 800,
+  publicUrl: "",
 };
 
 const elements = {
@@ -21,6 +23,7 @@ const elements = {
   resetButton: document.querySelector("#reset-button"),
   copyButton: document.querySelector("#copy-button"),
   embedCode: document.querySelector("#embed-code"),
+  previewPanel: document.querySelector("#preview-panel"),
   previewTabs: document.querySelector("#preview-tabs"),
   artboardControls: document.querySelector("#artboard-controls"),
   prevArtboard: document.querySelector("#prev-artboard"),
@@ -37,6 +40,8 @@ const DEFAULT_CONFIG = {
   branch: "main",
   pagesBaseUrl: "https://nickmourtoupalas.com/ai2html-uploader/",
 };
+
+const DEFAULT_EMBED_MAX_WIDTH = 656;
 
 const TEXT_EXTENSIONS = new Set([
   "css",
@@ -114,10 +119,13 @@ elements.resetButton.addEventListener("click", () => {
   state.mainHtmlPath = "";
   state.previewHtmlPath = "";
   state.embedCode = "";
+  state.embedHeight = 800;
+  state.publicUrl = "";
   elements.folderInput.value = "";
   elements.embedCode.value = "";
   elements.copyButton.disabled = true;
   elements.fileSummary.textContent = "No folder selected yet.";
+  elements.previewPanel.classList.add("hidden");
   renderPreviewTabs();
   clearPreview();
   setLog(["Ready."]);
@@ -187,8 +195,13 @@ async function loadFileList(fileList) {
   state.mainHtmlPath = mainHtmlPath;
   state.previewHtmlPath = mainHtmlPath;
   state.embedCode = "";
+  state.publicUrl = "";
   elements.embedCode.value = "";
   elements.copyButton.disabled = true;
+  const mainHtmlFile = normalizedFiles.find((item) => item.path === mainHtmlPath);
+  const mainHtml = await mainHtmlFile.file.text();
+  state.embedHeight = detectEmbedHeight(mainHtml);
+  refreshEmbedCode();
 
   const assetCount = normalizedFiles.length - 1;
   elements.fileSummary.innerHTML = [
@@ -199,6 +212,7 @@ async function loadFileList(fileList) {
   ].join("<br>");
   renderPreviewTabs();
   await updatePreview(mainHtmlPath);
+  elements.previewPanel.classList.remove("hidden");
   setLog(["Folder loaded and preview rendered. Paste a token, then upload."]);
 }
 
@@ -248,9 +262,8 @@ async function uploadProject(formData) {
     }
 
     const mainUrl = joinUrl(publicBaseUrl, state.mainHtmlPath);
-    const embedCode = `<iframe title="ai2html graphic" src="${escapeAttribute(mainUrl)}" width="100%" height="600" loading="lazy" style="border:0;"></iframe>`;
-    state.embedCode = embedCode;
-    elements.embedCode.value = embedCode;
+    state.publicUrl = mainUrl;
+    refreshEmbedCode();
     elements.copyButton.disabled = false;
     appendLog(`Uploaded successfully: ${mainUrl}`, "success");
   } catch (error) {
@@ -322,6 +335,25 @@ function rewriteHtmlUrls(html, htmlPath, publicBaseUrl) {
   const rewritten = doc.documentElement.outerHTML;
   const doctype = html.match(/^\s*<!doctype[^>]*>/i)?.[0] || "<!doctype html>";
   return toBase64(`${doctype}\n${rewritten}`);
+}
+
+function createEmbedCode(mainUrl, iframeHeight, maxWidth) {
+  const escapedUrl = escapeAttribute(mainUrl);
+  const height = Math.max(1, Number(iframeHeight) || 800);
+  const wrapperWidth = Math.max(0, Number(maxWidth) || 0);
+  const maxWidthStyle = wrapperWidth ? `max-width:${wrapperWidth}px;margin:0 auto;` : "";
+  return `<iframe src="${escapedUrl}" width="100%" height="${height}" style="border:0;display:block;overflow:hidden;${maxWidthStyle}" scrolling="no" loading="lazy"></iframe>`;
+}
+
+function refreshEmbedCode() {
+  if (!state.publicUrl) return;
+
+  state.embedCode = createEmbedCode(
+    state.publicUrl,
+    state.embedHeight,
+    DEFAULT_EMBED_MAX_WIDTH,
+  );
+  elements.embedCode.value = state.embedCode;
 }
 
 function rewriteHtmlForPreview(html, htmlPath, previewUrls) {
@@ -433,6 +465,7 @@ async function updatePreview(htmlPath) {
     state.selectedArtboardIndex = getDefaultArtboardIndex(state.previewArtboards);
     const previewHtml = rewriteHtmlForPreview(html, htmlPath, previewUrls);
     state.previewDocumentUrl = URL.createObjectURL(new Blob([previewHtml], { type: "text/html" }));
+    elements.previewFrame.onload = applySelectedArtboardPreviewStyles;
     elements.previewFrame.src = state.previewDocumentUrl;
     elements.previewFrame.classList.add("visible");
     elements.previewEmpty.classList.add("hidden");
@@ -475,15 +508,23 @@ function detectPreviewArtboards(html) {
   const artboards = [...doc.querySelectorAll(".g-artboard")].map((node, index) => {
     const id = node.getAttribute("id") || `Artboard ${index + 1}`;
     const width = getArtboardWidth(node);
-    const name = cleanArtboardName(id);
+    const height = getArtboardHeight(node, width);
+    const name = getArtboardName(node, id);
     return {
       id,
       label: width ? `${name} (${width}px)` : name,
+      height,
       width,
     };
   });
 
-  return artboards.length ? artboards : [{ id: "preview", label: "Full preview", width: 0 }];
+  return artboards.length ? artboards : [{ id: "preview", label: "Full preview", height: 0, width: 0 }];
+}
+
+function detectEmbedHeight(html) {
+  const artboards = detectPreviewArtboards(html);
+  const tallest = artboards.reduce((height, artboard) => Math.max(height, artboard.height || 0), 0);
+  return tallest ? tallest + 20 : 800;
 }
 
 function getArtboardWidth(node) {
@@ -500,13 +541,34 @@ function getArtboardWidth(node) {
   return width ? Math.round(width) : 0;
 }
 
-function cleanArtboardName(id) {
-  return id
-    .replace(/^g-/, "")
-    .replace(/^[^-]+-/, "")
-    .replace(/[_-]+/g, " ")
-    .trim()
-    || "Artboard";
+function getArtboardHeight(node, width) {
+  const candidates = [
+    node.style.height,
+    node.style.maxHeight,
+    node.getAttribute("data-height"),
+  ];
+  const height = candidates
+    .map((value) => Number(String(value || "").replace(/[^\d.]/g, "")))
+    .find((value) => Number.isFinite(value) && value > 0);
+
+  if (height) return Math.round(height);
+
+  const aspectRatio = Number(node.getAttribute("data-aspect-ratio"));
+  return width && aspectRatio ? Math.round(width / aspectRatio) : 0;
+}
+
+function getArtboardName(node, id) {
+  let sibling = node.previousSibling;
+  while (sibling) {
+    if (sibling.nodeType === Node.COMMENT_NODE) {
+      const match = sibling.nodeValue.match(/Artboard:\s*(.+)/i);
+      if (match) return match[1].trim();
+    }
+    if (sibling.nodeType === Node.ELEMENT_NODE) break;
+    sibling = sibling.previousSibling;
+  }
+
+  return id.replace(/^g-/, "").trim() || "Artboard";
 }
 
 function getDefaultArtboardIndex(artboards) {
@@ -535,8 +597,62 @@ function renderArtboardControls() {
 
   if (artboard?.width) {
     elements.previewFrame.style.width = `${artboard.width}px`;
+    elements.previewFrame.style.height = `${artboard.height || 620}px`;
   } else {
     elements.previewFrame.style.width = "100%";
+    elements.previewFrame.style.height = "620px";
+  }
+  applySelectedArtboardPreviewStyles();
+}
+
+function applySelectedArtboardPreviewStyles() {
+  try {
+    const doc = elements.previewFrame.contentDocument;
+    if (!doc) return;
+    const selected = state.previewArtboards[state.selectedArtboardIndex];
+    const targetWidth = selected?.width || 0;
+    const targetHeight = selected?.height || 0;
+
+    doc.documentElement.style.margin = "0";
+    doc.documentElement.style.padding = "0";
+    doc.documentElement.style.overflow = "hidden";
+    doc.body.style.margin = "0";
+    doc.body.style.padding = "0";
+    doc.body.style.overflow = "hidden";
+    if (targetWidth) {
+      doc.documentElement.style.width = `${targetWidth}px`;
+      doc.documentElement.style.maxWidth = `${targetWidth}px`;
+      doc.body.style.width = `${targetWidth}px`;
+      doc.body.style.maxWidth = `${targetWidth}px`;
+    }
+    if (targetHeight) {
+      doc.documentElement.style.height = `${targetHeight}px`;
+      doc.body.style.height = `${targetHeight}px`;
+    }
+
+    state.previewArtboards.forEach((artboard, index) => {
+      const node = doc.getElementById(artboard.id);
+      if (!node) return;
+
+      const isSelected = index === state.selectedArtboardIndex;
+      node.style.display = isSelected ? "block" : "none";
+      if (isSelected && artboard.width) {
+        node.style.width = `${artboard.width}px`;
+        node.style.maxWidth = `${artboard.width}px`;
+        node.style.margin = "0";
+      }
+    });
+
+    const selectedNode = selected ? doc.getElementById(selected.id) : null;
+    if (selectedNode) {
+      const rect = selectedNode.getBoundingClientRect();
+      const width = Math.ceil(selected.width || rect.width || 0);
+      const height = Math.ceil(selected.height || rect.height || 0);
+      if (width) elements.previewFrame.style.width = `${width}px`;
+      if (height) elements.previewFrame.style.height = `${height}px`;
+    }
+  } catch {
+    // Cross-frame inspection can fail in some browser contexts; the preview still falls back to ai2html CSS.
   }
 }
 
@@ -557,16 +673,22 @@ function renderPreviewTabs() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `preview-tab${path === state.previewHtmlPath ? " active" : ""}`;
-    button.textContent = path === state.mainHtmlPath ? `${path} (main)` : path;
+    button.textContent = displayHtmlName(path);
     button.title = path;
     button.addEventListener("click", () => updatePreview(path));
     elements.previewTabs.append(button);
   });
 }
 
+function displayHtmlName(path) {
+  const fileName = path.split("/").pop() || path;
+  return fileName.replace(/\.html?$/i, "");
+}
+
 function clearPreview() {
   elements.previewFrame.removeAttribute("src");
   elements.previewFrame.style.width = "";
+  elements.previewFrame.style.height = "";
   elements.previewFrame.classList.remove("visible");
   elements.previewEmpty.classList.remove("hidden");
   elements.previewTabs.innerHTML = "";
