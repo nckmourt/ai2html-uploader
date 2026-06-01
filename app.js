@@ -41,7 +41,7 @@ const DEFAULT_CONFIG = {
   pagesBaseUrl: "https://nickmourtoupalas.com/ai2html-uploader/",
 };
 
-const DEFAULT_EMBED_MAX_WIDTH = 656;
+const DEFAULT_EMBED_MAX_WIDTH = 1200;
 
 const TEXT_EXTENSIONS = new Set([
   "css",
@@ -341,8 +341,9 @@ function createEmbedCode(mainUrl, iframeHeight, maxWidth) {
   const escapedUrl = escapeAttribute(mainUrl);
   const height = Math.max(1, Number(iframeHeight) || 800);
   const wrapperWidth = Math.max(0, Number(maxWidth) || 0);
-  const maxWidthStyle = wrapperWidth ? `max-width:${wrapperWidth}px;margin:0 auto;` : "";
-  return `<iframe src="${escapedUrl}" width="100%" height="${height}" style="border:0;display:block;overflow:hidden;${maxWidthStyle}" scrolling="no" loading="lazy"></iframe>`;
+  const iframe = `<iframe src="${escapedUrl}" width="100%" height="${height}" style="border:0;display:block;overflow:hidden;width:calc(100% + 16px);max-width:calc(100% + 16px);margin-left:-8px;" scrolling="no" loading="lazy"></iframe>`;
+  if (!wrapperWidth) return iframe;
+  return `<div style="position:relative;left:50%;transform:translateX(-50%);width:calc(100vw - 48px);max-width:${wrapperWidth}px;margin:0 auto;overflow:hidden;">${iframe}</div>`;
 }
 
 function refreshEmbedCode() {
