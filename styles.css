@@ -128,13 +128,31 @@ h2 {
 .drop-icon {
   display: grid;
   place-items: center;
+  position: relative;
   width: 46px;
   height: 46px;
   border-radius: 50%;
   background: var(--accent);
   color: white;
-  font-size: 2rem;
-  line-height: 1;
+  font-size: 0;
+  line-height: 0;
+}
+
+.drop-icon::before,
+.drop-icon::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 18px;
+  height: 5px;
+  border-radius: 1px;
+  background: currentColor;
+  transform: translate(-50%, -50%);
+}
+
+.drop-icon::after {
+  transform: translate(-50%, -50%) rotate(90deg);
 }
 
 .drop-title {
