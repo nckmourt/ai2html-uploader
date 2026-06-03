@@ -11,6 +11,7 @@ const state = {
   missingPreviewAssets: new Set(),
   embedCode: "",
   embedHeight: 800,
+  embedArtboards: [],
   publicUrl: "",
 };
 
@@ -120,6 +121,7 @@ elements.resetButton.addEventListener("click", () => {
   state.previewHtmlPath = "";
   state.embedCode = "";
   state.embedHeight = 800;
+  state.embedArtboards = [];
   state.publicUrl = "";
   elements.folderInput.value = "";
   elements.embedCode.value = "";
@@ -200,7 +202,8 @@ async function loadFileList(fileList) {
   elements.copyButton.disabled = true;
   const mainHtmlFile = normalizedFiles.find((item) => item.path === mainHtmlPath);
   const mainHtml = await mainHtmlFile.file.text();
-  state.embedHeight = detectEmbedHeight(mainHtml);
+  state.embedArtboards = detectPreviewArtboards(mainHtml);
+  state.embedHeight = detectEmbedHeightFromArtboards(state.embedArtboards);
   refreshEmbedCode();
 
   const assetCount = normalizedFiles.length - 1;
@@ -337,13 +340,32 @@ function rewriteHtmlUrls(html, htmlPath, publicBaseUrl) {
   return toBase64(`${doctype}\n${rewritten}`);
 }
 
-function createEmbedCode(mainUrl, iframeHeight, maxWidth) {
+function createEmbedCode(mainUrl, iframeHeight, maxWidth, artboards = []) {
   const escapedUrl = escapeAttribute(mainUrl);
   const height = Math.max(1, Number(iframeHeight) || 800);
   const wrapperWidth = Math.max(0, Number(maxWidth) || 0);
-  const iframe = `<iframe src="${escapedUrl}" width="100%" height="${height}" style="border:0;display:block;overflow:hidden;width:calc(100% + 16px);max-width:calc(100% + 16px);margin-left:-8px;" scrolling="no" loading="lazy"></iframe>`;
+  const embedId = `ai2html-embed-${hashString(mainUrl)}`;
+  const iframe = `<iframe src="${escapedUrl}" width="100%" height="${height}" style="border:0;display:block;overflow:hidden;width:calc(100% + 16px);max-width:calc(100% + 16px);margin-left:-8px;height:${height}px;" scrolling="no" loading="lazy"></iframe>`;
   if (!wrapperWidth) return iframe;
-  return `<div style="position:relative;left:50%;transform:translateX(-50%);width:calc(100vw - 48px);max-width:${wrapperWidth}px;margin:0 auto;overflow:hidden;">${iframe}</div>`;
+  const wrapper = `<div id="${embedId}" style="position:relative;left:50%;transform:translateX(-50%);width:calc(100vw - 48px);max-width:${wrapperWidth}px;margin:0 auto;overflow:hidden;">${iframe}</div>`;
+  const resizeScript = createEmbedResizeScript(embedId, height, artboards);
+  return `${wrapper}${resizeScript}`;
+}
+
+function createEmbedResizeScript(embedId, fallbackHeight, artboards) {
+  const artboardConfig = artboards
+    .filter((artboard) => artboard.height > 0)
+    .map((artboard) => ({
+      min: Math.max(0, Number(artboard.minWidth) || 0),
+      max: Number.isFinite(artboard.maxWidth) && artboard.maxWidth > 0 ? artboard.maxWidth : null,
+      height: Math.max(1, Number(artboard.height) || fallbackHeight),
+    }))
+    .sort((a, b) => a.min - b.min);
+
+  if (!artboardConfig.length) return "";
+
+  const configJson = JSON.stringify(artboardConfig).replace(/</g, "\\u003c");
+  return `<script>(()=>{const wrap=document.getElementById("${embedId}");if(!wrap)return;const frame=wrap.querySelector("iframe");const artboards=${configJson};const buffer=20;const fallback=${fallbackHeight};const choose=(width)=>artboards.find((item)=>width>=item.min&&(item.max===null||width<=item.max))||[...artboards].reverse().find((item)=>width>=item.min)||artboards[0];const resize=()=>{if(!frame)return;const artboard=choose(wrap.clientWidth||window.innerWidth);const height=Math.round((artboard?.height||fallback)+buffer);frame.height=height;frame.style.height=height+"px";};resize();window.addEventListener("resize",resize,{passive:true});frame?.addEventListener("load",resize);if("ResizeObserver"in window)new ResizeObserver(resize).observe(wrap);})();</script>`;
 }
 
 function refreshEmbedCode() {
@@ -353,6 +375,7 @@ function refreshEmbedCode() {
     state.publicUrl,
     state.embedHeight,
     DEFAULT_EMBED_MAX_WIDTH,
+    state.embedArtboards,
   );
   elements.embedCode.value = state.embedCode;
 }
@@ -510,22 +533,39 @@ function detectPreviewArtboards(html) {
     const id = node.getAttribute("id") || `Artboard ${index + 1}`;
     const width = getArtboardWidth(node);
     const height = getArtboardHeight(node, width);
+    const minWidth = getArtboardMinWidth(node);
+    const maxWidth = getArtboardMaxWidth(node);
     const name = getArtboardName(node, id);
     return {
       id,
       label: width ? `${name} (${width}px)` : name,
       height,
+      maxWidth,
+      minWidth,
       width,
     };
   });
 
-  return artboards.length ? artboards : [{ id: "preview", label: "Full preview", height: 0, width: 0 }];
+  return artboards.length ? artboards : [{ id: "preview", label: "Full preview", height: 0, maxWidth: null, minWidth: 0, width: 0 }];
 }
 
 function detectEmbedHeight(html) {
-  const artboards = detectPreviewArtboards(html);
+  return detectEmbedHeightFromArtboards(detectPreviewArtboards(html));
+}
+
+function detectEmbedHeightFromArtboards(artboards) {
   const tallest = artboards.reduce((height, artboard) => Math.max(height, artboard.height || 0), 0);
   return tallest ? tallest + 20 : 800;
+}
+
+function getArtboardMinWidth(node) {
+  const minWidth = Number(String(node.getAttribute("data-min-width") || "").replace(/[^\d.]/g, ""));
+  return Number.isFinite(minWidth) && minWidth > 0 ? Math.round(minWidth) : 0;
+}
+
+function getArtboardMaxWidth(node) {
+  const maxWidth = Number(String(node.getAttribute("data-max-width") || "").replace(/[^\d.]/g, ""));
+  return Number.isFinite(maxWidth) && maxWidth > 0 ? Math.round(maxWidth) : null;
 }
 
 function getArtboardWidth(node) {
@@ -992,6 +1032,14 @@ function escapeHtml(text) {
 
 function escapeAttribute(text) {
   return text.replace(/"/g, "&quot;");
+}
+
+function hashString(text) {
+  let hash = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = ((hash << 5) - hash + text.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash).toString(36);
 }
 
 function setLog(messages) {
